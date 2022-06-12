@@ -1,0 +1,92 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+ deploy:
+    name: deploy
+    
+    strategy: 
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        feature: ['', 'sse4.2', 'avx2']
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            feature: ''
+            flags: ''
+            suffix: '.exe'
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            feature: 'sse4.2'
+            flags: '-C target-feature=+sse4.2'
+            suffix: '.exe'
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            feature: 'avx2'
+            flags: '-C target-feature=+avx2'
+            suffix: '.exe'
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            feature: ''
+            flags: ''
+            suffix: ''
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            feature: 'sse4.2'
+            flags: '-C target-feature=+sse4.2'
+            suffix: ''
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            feature: 'avx2'
+            flags: '-C target-feature=+avx2'
+            suffix: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: '${{ runner.os }}-cargo-registry-${{ hashFiles(''**/Cargo.lock'') }}'
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: '${{ runner.os }}-cargo-index-${{ hashFiles(''**/Cargo.lock'') }}'
+      - uses: actions/cache@v1
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Remove cargo config
+        uses: JesseTG/rm@v1.0.2
+        with:
+          path: .cargo
+      - name: Install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: ${{ matrix.target }}
+
+      - name: Build target
+        uses: actions-rs/cargo@v1
+        env:
+          RUSTFLAGS: ${{ matrix.flags }}
+        with:
+          command: build
+          args: --release
+
+      - name: Publish
+        uses: actions/upload-artifact@master
+        with:
+          name: mcstatus-checker-${{ matrix.feature }}-${{ matrix.target }}
+          path: ${{ github.workspace }}/target/release/mcstatus-checker${{ matrix.suffix }}
+        
