@@ -8,6 +8,7 @@ use std::future::Future;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use async_minecraft_ping::{ConnectionConfig, ServerDescription, ServerPlayer, ServerPlayers, ServerVersion, StatusConnection, StatusResponse};
 use rocket::{Build, Rocket};
+use rocket::http::{ContentType, Header, Status};
 use rocket::serde::json::Json;
 use serde::{Serialize, Serializer};
 use tokio::fs::read_to_string;
@@ -128,7 +129,7 @@ pub enum StatusError {
 }
 
 #[get("/<address>")]
-async fn status(address: &str) -> &'static str {
+async fn status(address: &str) -> (Status, &'static str) {
     let mut split = address.split(":");
     let result: Result<StatusResponse, StatusError> = async {
         let host = split.next().ok_or(StatusError::InvalidInput)?;
@@ -150,12 +151,13 @@ async fn status(address: &str) -> &'static str {
         }
     }.await;
 
+
     match result {
         Ok(response) => {
-            "Online"
+            (Status::Ok, "Online")
         }
         Err(e) => {
-            "Offline"
+            (Status::ServiceUnavailable, "Offline")
         }
     }
 }
@@ -182,6 +184,7 @@ async fn status_json(address: &str) -> Json<Response> {
             }
         }
     }.await;
+
 
     Json(match result {
         Ok(response) => {
