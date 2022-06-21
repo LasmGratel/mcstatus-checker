@@ -6,7 +6,7 @@ extern crate rocket;
 
 use std::future::Future;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use async_minecraft_ping::{ConnectionConfig, ServerDescription, ServerPlayer, ServerPlayers, ServerVersion, StatusConnection, StatusResponse};
+use async_minecraft_ping::{ConnectionConfig, ServerDescription, ServerPlayer, ServerPlayers, ServerVersion, StatusResponse};
 use rocket::{Build, Rocket};
 use rocket::http::{ContentType, Header, Status};
 use rocket::serde::json::Json;
@@ -134,21 +134,7 @@ async fn status(address: &str) -> (Status, &'static str) {
     let result: Result<StatusResponse, StatusError> = async {
         let host = split.next().ok_or(StatusError::InvalidInput)?;
         let port = split.next().and_then(|x| x.parse::<u16>().ok()).unwrap_or(25565);
-        match tokio::time::timeout(Duration::from_secs(2), ping(host, port)).await {
-            Ok(x) => {
-                match x {
-                    Ok(y) => {
-                        Ok(y)
-                    }
-                    Err(_) => {
-                        Err(StatusError::ProtocolError)
-                    }
-                }
-            }
-            Err(_) => {
-                Err(StatusError::Timeout)
-            }
-        }
+        ping_timeout_retry(host, port, Duration::from_secs(3), 3).await
     }.await;
 
 
@@ -168,23 +154,8 @@ async fn status_json(address: &str) -> Json<Response> {
     let result: Result<StatusResponse, StatusError> = async {
         let host = split.next().ok_or(StatusError::InvalidInput)?;
         let port = split.next().and_then(|x| x.parse::<u16>().ok()).unwrap_or(25565);
-        match tokio::time::timeout(Duration::from_secs(5), ping(host, port)).await {
-            Ok(x) => {
-                match x {
-                    Ok(y) => {
-                        Ok(y)
-                    }
-                    Err(_) => {
-                        Err(StatusError::ProtocolError)
-                    }
-                }
-            }
-            Err(_) => {
-                Err(StatusError::Timeout)
-            }
-        }
+        ping_timeout_retry(host, port, Duration::from_secs(3), 3).await
     }.await;
-
 
     Json(match result {
         Ok(response) => {
@@ -200,6 +171,39 @@ async fn status_json(address: &str) -> Json<Response> {
             }
         }
     })
+}
+
+async fn ping_timeout_retry(host: &str, port: u16, timeout: Duration, retry: usize) -> Result<StatusResponse, StatusError> {
+    let mut last_err = StatusError::ProtocolError;
+    for i in 0..retry {
+        match ping_timeout(host, port, timeout).await {
+            Ok(x) => {
+                return Ok(x);
+            }
+            Err(e) => {
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err)
+}
+
+async fn ping_timeout(host: &str, port: u16, timeout: Duration) -> Result<StatusResponse, StatusError> {
+    match tokio::time::timeout(timeout, ping(host, port)).await {
+        Ok(x) => {
+            match x {
+                Ok(y) => {
+                    Ok(y)
+                }
+                Err(_) => {
+                    Err(StatusError::ProtocolError)
+                }
+            }
+        }
+        Err(_) => {
+            Err(StatusError::Timeout)
+        }
+    }
 }
 
 async fn ping(host: &str, port: u16) -> Result<StatusResponse, StdError> {
